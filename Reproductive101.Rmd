@@ -1,0 +1,261 @@
+---
+title: "Reproductive101"
+author: "ND"
+date: "2024-08-10"
+output: html_document
+---
+# Research question:Are Sockeye salmon escapement goals being met in recent years in Bristol Bay?
+
+## Data preperation
+### Tools Loading
+```{r}
+library(dplyr)
+library(tidyr)
+library(DT)
+```
+### Import data
+```{r}
+pacific_salmon<-read.csv("/Users/mac/Library/CloudStorage/OneDrive-JohnsHopkins/R/sasap-test/MandV2016.csv")
+
+salmon_oceanak<-read.csv("/Users/mac/Library/CloudStorage/OneDrive-JohnsHopkins/R/sasap-test/ADFG_firstAttempt_reformatted.csv")
+```
+
+## Data Cleaning and Manipulation
+
+### Clean
+
+1. Clean the escapement goals dataset
+```{r}
+#Quick Look of the data
+head(pacific_salmon)
+head(salmon_oceanak)
+  
+## Check column type and Filter to just the Bristol Bay region and the Sockeye salmon species for Pacific salmon
+sockeye_goals<-pacific_salmon %>% 
+  filter(Region=="Bristol Bay",Species=="Sockeye") %>% 
+  mutate(Lower=as.integer(Lower),Initial.Year=as.integer(Initial.Year)) %>% 
+  select(System,Lower,Upper,Initial.Year) %>% 
+  drop_na()
+datatable(sockeye_goals)
+```
+
+
+
+2. Clean the escapement dataset
+```{r}
+## Check column type and Filter to just the Bristol Bay region and the Sockeye salmon species for oceanak
+
+sockeye_escapement<-salmon_oceanak %>% 
+  filter(SASAP.Region=="Bristol Bay",Species=="Sockeye",Location %in% sockeye_goals$System) %>% 
+  separate(sampleDate,c("Year","Month","Day"),sep = "-") %>% 
+  group_by(Location,Year) %>% 
+  summarise(Escapement=sum(DailyCount))
+
+datatable(sockeye_escapement)
+  
+```
+## Intergrate
+Join the escapement goal lower and upper bounds onto the annual total escapement counts 
+```{r}
+escapement_with_goals <- 
+  left_join(sockeye_escapement, sockeye_goals, by=c("Location"="System")) %>% 
+  mutate(is_goal_within = ifelse(Escapement < Upper & Escapement > Lower, TRUE, FALSE),
+         drop_by_year = ifelse(Year >= Initial.Year, FALSE, TRUE))
+datatable(escapement_with_goals)
+
+```
+left_join(sockeye_escapement, sockeye_goals, by=c("Location"="System"))
+## Graph Analyze
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+```
+
+### New data install
+```{r}
+permits <- read.csv(url("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3Aa3c58bd6-481e-4c64-aa93-795df10a4664", method = "libcurl"),
+                    stringsAsFactors = FALSE)
+```
+
+### Geoms/Aesthetics
+```{r}
+ggplot(permits, aes(Value, StdDev))+
+  geom_point()
+```
+
+
+```{r}
+ggplot(permits, aes(Value, StdDev, color = Region))+
+  geom_point()
+```
+
+
+```{r}
+# sizing
+ggplot(permits, aes(Value, StdDev, color = Gear, size = Range))+
+  geom_point()
+```
+
+
+```{r}
+# histogram
+ggplot(permits, aes(Value))+
+  geom_histogram(binwidth = 1e4)
+```
+
+
+```{r}
+# box plot
+ggplot(permits, aes(Gear, Value))+
+  geom_boxplot()
+```
+
+
+```{r}
+# violin plot
+permits_ci<- permits %>% 
+  filter(Region=="Cook Inlet")
+
+ggplot(permits_ci, aes(Gear, Value))+
+  geom_violin()
+```
+
+```{r}
+# multi plot
+ggplot(permits, aes(Value, StdDev))+
+  geom_point()+
+  geom_smooth()
+```
+
+
+```{r}
+# bar plot
+
+permits_sum <- permits %>% 
+  group_by(Gear, Region) %>% 
+  summarize(mean_value = mean(Value, na.rm = T))
+
+ggplot(permits_sum, aes(x=Gear,y=mean_value, fill=Region))+
+  geom_bar(position = "stack", stat="identity")
+```
+
+```{r}
+ggplot(permits_sum, aes(x = Gear, y = mean_value, fill = Region)) +
+  geom_bar(position = "dodge", stat = "identity")
+```
+### Setting plot limits
+
+Plot limits can be controlled one of the three ways:
+- Filter the data (because limits are auto calculated from the data ranges)
+- Set the limits argument on one or both scales
+- Set the xlim and ylim argument in coord_cartesian()
+
+```{r}
+permits_se_seine <- permits %>% 
+  filter(Gear == "Purse Seine", 
+         Region == "Southeast")
+
+ggplot(permits_se_seine, aes(Year, Value)) + 
+  geom_point() +
+  geom_line()+
+  coord_cartesian(xlim = c(2000, max(permits_se_seine$Year)),
+                  ylim = c(0, max(permits_se_seine$Value)))
+  
+```
+
+### Scales
+
+```{r}
+ggplot(permits, aes(Value, StdDev, color = Gear)) + 
+  geom_point()+
+   scale_color_manual(values = c("red", "orange", "yellow", "green", "blue", "purple", "violet")) # ROYGBIV
+```
+```{r}
+ggplot(permits, aes(Value, StdDev, color = Gear)) + 
+  geom_point() + 
+  scale_color_hue(h = c(270, 360)) # blue to red
+```
+
+
+```{r}
+# scales
+ggplot(permits, aes(Value, StdDev, color = Gear)) + 
+  geom_point() + 
+  scale_x_log10()
+```
+
+```{r}
+permits %>%
+  group_by(Gear) %>% 
+  summarize(meanval = mean(Value, na.rm = TRUE)) %>% 
+  ggplot(aes(Gear, meanval)) +
+  geom_col() +
+  scale_x_discrete(labels = sort(unique(permits$Gear)))
+```
+
+```{r}
+ggplot(permits_se_seine, aes(Year, Value)) + 
+  geom_point() +
+  geom_line() +
+  scale_x_continuous(breaks = c(1990, 2010))
+```
+
+### Facets
+Facets allow us to create a powerful visualization called a small multiple:
+
+```{r}
+ggplot(permits_ci, aes(Year, Value)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ Gear)
+```
+
+```{r}
+ggplot(permits_ci, aes(Year, Value)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ Gear, ncol = 1)
+```
+
+
+### Plot customization w/ themes
+
+```{r}
+ggplot(permits, aes(Value, StdDev, color = Gear)) + 
+  geom_point() +
+  theme_classic()
+```
+
+
+
+```{r}
+ggplot(permits, aes(Value, StdDev, color = Gear)) + 
+  geom_point() +
+  theme_classic() +
+  theme(legend.position = "bottom",
+        legend.background = element_rect(fill = "#EEEEEE", color = "black"),
+        legend.title = element_blank(),
+        axis.title = element_text(size = 16))
+```
+
+```{r}
+ggplot(permits, aes(Value, StdDev, color = Gear)) +
+  geom_point() +
+  theme_classic() +
+  theme(legend.position = c(1, 1),
+        legend.justification = c(1,1),
+        legend.direction = "horizontal",
+        legend.title = element_blank()) +
+  xlab("Permit Value (unadjusted USD)") +
+  ylab("Permit Std. Dev. (unadjusted USD)") +
+  ggtitle("Permit Standard Deviation against Permit Value by Gear Type",
+          "or: I wish I owned a seine permit")
+```
+
+### Saving plot
+
+```{r}
+ggsave("permit_stddev_vs_value.png", width = 6, height = 6)
+```
+
